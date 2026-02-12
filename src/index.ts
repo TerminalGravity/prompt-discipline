@@ -45,6 +45,7 @@ import { registerSearchHistory } from "./tools/search-history.js";
 import { registerTimeline } from "./tools/timeline-view.js";
 import { registerScanSessions } from "./tools/scan-sessions.js";
 import { registerGenerateScorecard } from "./tools/generate-scorecard.js";
+import { registerEstimateCost } from "./tools/estimate-cost.js";
 
 // Validate related projects from config
 function validateRelatedProjects(): void {
@@ -103,6 +104,7 @@ const toolRegistry: Array<[string, RegisterFn]> = [
   ["timeline_view", registerTimeline],
   ["scan_sessions", registerScanSessions],
   ["generate_scorecard", registerGenerateScorecard],
+  ["estimate_cost", registerEstimateCost],
 ];
 
 let registered = 0;

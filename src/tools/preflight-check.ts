@@ -11,6 +11,7 @@ import { findWorkspaceDocs } from "../lib/files.js";
 import { getConfig } from "../lib/config.js";
 import { searchSemantic } from "../lib/timeline-db.js";
 import { basename, join } from "path";
+import { loadPatterns, matchPatterns, formatPatternMatches } from "../lib/patterns.js";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -201,6 +202,16 @@ export function registerPreflightCheck(server: McpServer): void {
       if (force_level === "light") effectiveLevel = "ambiguous";
       if (force_level === "full") effectiveLevel = "multi-step";
 
+      // --- Pattern matching ---
+      const patterns = loadPatterns();
+      const patternMatches = matchPatterns(prompt, patterns);
+
+      // Boost triage level if patterns match
+      if (patternMatches.length > 0 && effectiveLevel === "trivial") {
+        effectiveLevel = "ambiguous";
+        triage.reasons.push(`matches ${patternMatches.length} known correction pattern(s)`);
+      }
+
       // --- Trivial ---
       if (effectiveLevel === "trivial") {
         return { content: [{ type: "text" as const, text: "✅ Preflight: clear to proceed." }] };
@@ -211,6 +222,14 @@ export function registerPreflightCheck(server: McpServer): void {
         `_${ts} | Triage: **${effectiveLevel}** (confidence: ${triage.confidence.toFixed(2)})_`,
         `_Reasons: ${triage.reasons.join("; ")}_`,
       ];
+
+      // --- Pattern warnings ---
+      if (patternMatches.length > 0) {
+        sections.push("");
+        for (const p of patternMatches) {
+          sections.push(`⚡ Known pitfall: "${p.pattern}" (you've corrected this ${p.frequency}x before)`);
+        }
+      }
 
       // --- Clear: verify files ---
       if (effectiveLevel === "clear") {

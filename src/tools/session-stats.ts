@@ -124,6 +124,8 @@ export function registerSessionStats(server: McpServer): void {
         ``,
         `Most active branches:`,
         topBranches || "  (none)",
+        ``,
+        `💰 Run estimate_cost for detailed cost analysis.`,
       ].join("\n");
 
       return {

@@ -45,6 +45,7 @@ const STANDARD_TOOLS = new Set([
   "search_history",
   "timeline_view",
   "scan_sessions",
+  "estimate_cost",
 ]);
 
 // Full = standard + OpenAI embedding option (needs API key)

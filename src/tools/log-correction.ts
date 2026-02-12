@@ -2,6 +2,7 @@ import { z } from "zod";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { getBranch } from "../lib/git.js";
 import { appendLog, readLog, now } from "../lib/state.js";
+import { refreshPatterns } from "../lib/patterns.js";
 
 const CATEGORIES = [
   "vague_prompt",
@@ -35,6 +36,9 @@ export function registerLogCorrection(server: McpServer): void {
         category,
       };
       appendLog("corrections.jsonl", entry);
+
+      // Re-extract patterns from all corrections
+      const updatedPatterns = refreshPatterns();
 
       const corrections = readLog("corrections.jsonl");
       const total = corrections.length;
@@ -81,7 +85,10 @@ ${sorted.map(([k, v]) => `- ${k}: ${v} (${Math.round(v / total * 100)}%)`).join(
 
 ### Most Common: ${topCategory[0]} (${topCategory[1]}x)
 
-${hints[topCategory[0]] || ""}`,
+${hints[topCategory[0]] || ""}
+
+### Learned Patterns: ${updatedPatterns.length}
+${updatedPatterns.length > 0 ? updatedPatterns.map(p => `- "${p.pattern}" (${p.frequency}x)`).join("\n") : "_Not enough corrections yet to detect patterns._"}`,
         }],
       };
     }
