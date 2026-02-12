@@ -56,20 +56,33 @@ The pattern is always the same: vague prompt → Claude guesses → wrong output
 
 ## Quick Start
 
+### Option A: Claude Code CLI (fastest)
+
+```bash
+claude mcp add preflight -- npx tsx /path/to/preflight/src/index.ts
+```
+
+Or with environment variables:
+
+```bash
+claude mcp add preflight -e CLAUDE_PROJECT_DIR=/path/to/your/project -- npx tsx /path/to/preflight/src/index.ts
+```
+
+### Option B: Clone & configure manually
+
 **1. Clone & install:**
 ```bash
 git clone https://github.com/TerminalGravity/preflight.git
 cd preflight && npm install
 ```
 
-**2. Add to your Claude Code config** (`.claude/settings.json` or project `.mcp.json`):
+**2. Add to your project's `.mcp.json`:**
 ```json
 {
   "mcpServers": {
     "preflight": {
       "command": "npx",
       "args": ["tsx", "/path/to/preflight/src/index.ts"],
-      "cwd": "/path/to/preflight",
       "env": {
         "CLAUDE_PROJECT_DIR": "/path/to/your/project"
       }
@@ -78,7 +91,7 @@ cd preflight && npm install
 }
 ```
 
-**3. Restart Claude Code.** That's it. The tools activate automatically.
+**3. Restart Claude Code.** The tools activate automatically.
 
 ## Tool Reference
 
