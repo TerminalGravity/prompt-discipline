@@ -5,11 +5,11 @@ import { run } from "../lib/git.js";
 import { now } from "../lib/state.js";
 import { PROJECT_DIR } from "../lib/files.js";
 import { existsSync } from "fs";
-import { join } from "path";
+import { join, resolve } from "path";
 
-type Cat = "schema" | "config" | "api" | "ui" | "test";
+type Cat = "schema" | "config" | "api" | "ui" | "test" | "other";
 
-const CATEGORIES: Record<Cat, RegExp> = {
+const CATEGORIES: Record<Exclude<Cat, "other">, RegExp> = {
   schema: /\b(schema|migrat|database|db|table|column|index|alter|foreign.?key)\b/i,
   config: /\b(config|env|\.env|settings|secrets?|dotenv|yaml|toml)\b/i,
   api:    /\b(api|route|endpoint|controller|handler|middleware|graphql|rest|rpc)\b/i,
@@ -18,16 +18,18 @@ const CATEGORIES: Record<Cat, RegExp> = {
 };
 
 const CAT_DIR_MAP: Record<string, string> = {
-  schema: "db/", config: "config/", api: "api/", ui: "src/", test: "test/",
+  schema: "db/", config: "config/", api: "api/", ui: "src/", test: "test/", other: "src/",
 };
 
-const DEP_ORDER: Cat[] = ["config", "schema", "api", "ui", "test"];
+// Dependency order: earlier items must complete before later ones
+const DEP_ORDER: Cat[] = ["config", "schema", "api", "ui", "test", "other"];
 
 function classify(task: string): Cat[] {
-  const cats = (Object.entries(CATEGORIES) as [Cat, RegExp][])
+  const cats = (Object.entries(CATEGORIES) as [Exclude<Cat, "other">, RegExp][])
     .filter(([, re]) => re.test(task))
-    .map(([k]) => k);
-  return cats.length > 0 ? cats : ["ui"];
+    .map(([k]) => k as Cat);
+  // Default to "other" instead of "ui" to avoid misclassifying unrelated tasks
+  return cats.length > 0 ? cats : ["other"];
 }
 
 function riskScore(cats: Cat[]): number {
@@ -37,7 +39,35 @@ function riskScore(cats: Cat[]): number {
   if (cats.includes("api")) s += 4;
   if (cats.includes("ui")) s += 2;
   if (cats.includes("test")) s += 1;
+  if (cats.includes("other")) s += 3;
   return s;
+}
+
+/** Validate a path is within PROJECT_DIR */
+function isSafePath(dir: string): boolean {
+  const resolved = resolve(PROJECT_DIR, dir);
+  return resolved.startsWith(resolve(PROJECT_DIR) + "/") || resolved === resolve(PROJECT_DIR);
+}
+
+/** Detect circular dependencies among categorized tasks */
+function detectCircularDeps(tasks: { task: string; cats: Cat[] }[]): string[] {
+  const warnings: string[] = [];
+  // Simple heuristic: if a task mentions output of another task, flag it
+  // More importantly, check if dependency order would create contradictions
+  const catSets = tasks.map((t) => new Set(t.cats));
+  for (let i = 0; i < tasks.length; i++) {
+    for (let j = i + 1; j < tasks.length; j++) {
+      const iCats = catSets[i];
+      const jCats = catSets[j];
+      // Check if i should come before j AND j before i
+      const iBeforeJ = [...iCats].some((c) => [...jCats].some((d) => DEP_ORDER.indexOf(c) < DEP_ORDER.indexOf(d)));
+      const jBeforeI = [...jCats].some((c) => [...iCats].some((d) => DEP_ORDER.indexOf(c) < DEP_ORDER.indexOf(d)));
+      if (iBeforeJ && jBeforeI) {
+        warnings.push(`⚠️ Potential circular dependency: "${tasks[i].task.slice(0, 50)}" and "${tasks[j].task.slice(0, 50)}" have cross-layer categories — consider splitting.`);
+      }
+    }
+  }
+  return warnings;
 }
 
 export function registerSequenceTasks(server: McpServer): void {
@@ -57,13 +87,23 @@ export function registerSequenceTasks(server: McpServer): void {
         dir: null as string | null,
       }));
 
-      // For locality: infer directories
+      // For locality: infer directories from path-like tokens in task text
       if (strategy === "locality") {
+        // Use git ls-files with a depth limit instead of find for performance
+        const gitFiles = run("git ls-files 2>/dev/null | head -1000");
+        const knownDirs = new Set<string>();
+        for (const f of gitFiles.split("\n").filter(Boolean)) {
+          const parts = f.split("/");
+          if (parts.length >= 2) knownDirs.add(parts.slice(0, 2).join("/"));
+          if (parts.length >= 1) knownDirs.add(parts[0]);
+        }
+
         for (const item of classified) {
           const pathTokens = item.task.match(/[\w\-\/]+\.\w+|[\w\-]+\/[\w\-\/]*/g) || [];
           for (const token of pathTokens) {
             const dir = token.split("/").slice(0, 2).join("/");
-            if (existsSync(join(PROJECT_DIR, dir))) {
+            // Validate: must be a known git directory and safe path
+            if (isSafePath(dir) && knownDirs.has(dir)) {
               item.dir = dir;
               break;
             }
@@ -79,22 +119,24 @@ export function registerSequenceTasks(server: McpServer): void {
 
       if (strategy === "dependency") {
         ordered = [...classified].sort((a, b) => {
-          const aIdx = Math.min(...a.cats.map((c) => DEP_ORDER.indexOf(c)).filter((i) => i >= 0), 99);
-          const bIdx = Math.min(...b.cats.map((c) => DEP_ORDER.indexOf(c)).filter((i) => i >= 0), 99);
+          const aIndices = a.cats.map((c) => DEP_ORDER.indexOf(c)).filter((i) => i >= 0);
+          const bIndices = b.cats.map((c) => DEP_ORDER.indexOf(c)).filter((i) => i >= 0);
+          const aIdx = aIndices.length > 0 ? Math.min(...aIndices) : DEP_ORDER.length;
+          const bIdx = bIndices.length > 0 ? Math.min(...bIndices) : DEP_ORDER.length;
           return aIdx - bIdx;
         });
         reasoning = ordered.map(
-          (item, i) => `#${i + 1}: [${item.cats.join(",")}] — ${DEP_ORDER.indexOf(item.cats[0]) <= 1 ? "foundational change, must come early" : "depends on earlier layers"}`
+          (item, i) => `${i + 1}. **[${item.cats.join(",")}]** — ${DEP_ORDER.indexOf(item.cats[0]) <= 1 ? "foundational change, must come early" : "depends on earlier layers"}`
         );
       } else if (strategy === "risk-first") {
         ordered = [...classified].sort((a, b) => riskScore(b.cats) - riskScore(a.cats));
         reasoning = ordered.map(
-          (item, i) => `#${i + 1}: [${item.cats.join(",")}] risk=${riskScore(item.cats)} — ${riskScore(item.cats) >= 7 ? "high-risk, do while context is fresh" : "lower risk, safe to do later"}`
+          (item, i) => `${i + 1}. **[${item.cats.join(",")}]** risk=${riskScore(item.cats)} — ${riskScore(item.cats) >= 7 ? "high-risk, do while context is fresh" : "lower risk, safe to do later"}`
         );
       } else {
         ordered = [...classified].sort((a, b) => (a.dir ?? "").localeCompare(b.dir ?? ""));
         reasoning = ordered.map(
-          (item, i) => `#${i + 1}: dir=${item.dir} [${item.cats.join(",")}] — grouped by proximity`
+          (item, i) => `${i + 1}. dir=\`${item.dir}\` **[${item.cats.join(",")}]** — grouped by proximity`
         );
       }
 
@@ -117,14 +159,21 @@ export function registerSequenceTasks(server: McpServer): void {
       if (hasSchema && hasApi) warnings.push("⚠️ Schema migrations and API changes should be sequential — API may reference new columns/tables.");
       if (hasSchema) warnings.push("⚠️ Schema/migration tasks are non-parallelizable with anything that touches the DB.");
 
+      // Circular dependency check
+      const circularWarnings = detectCircularDeps(classified);
+      warnings.push(...circularWarnings);
+
       const result = [
         `## Sequenced Tasks (strategy: ${strategy})`,
-        `_Generated ${ts}_\n`,
+        `_Generated ${ts}_`,
+        "",
         ...ordered.map((item, i) => `${i + 1}. ${item.task}`),
-        `\n### Reasoning`,
+        "",
+        "### Reasoning",
         ...reasoning,
-        `\n**Estimated context switches:** ${switches}`,
-        ...(warnings.length ? [`\n### Parallelization Warnings`, ...warnings] : []),
+        "",
+        `**Estimated context switches:** ${switches}`,
+        ...(warnings.length ? ["", "### Warnings", ...warnings] : []),
       ].join("\n");
 
       return { content: [{ type: "text" as const, text: result }] };

@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // =============================================================================
-// Prompt Coach MCP Server — v2.0 (TypeScript)
+// Prompt Coach MCP Server — v2.1 (TypeScript)
 // =============================================================================
 
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
@@ -52,6 +52,20 @@ registerSessionHandoff(server);     // 11a. Cross-Session Continuity
 registerWhatChanged(server);        // 11b. Cross-Session Continuity
 registerVerifyCompletion(server);   // 12. Verification
 
+// Graceful shutdown
+function shutdown() {
+  process.stderr.write("prompt-coach: shutting down\n");
+  process.exit(0);
+}
+process.on("SIGINT", shutdown);
+process.on("SIGTERM", shutdown);
+
 // Connect transport
-const transport = new StdioServerTransport();
-await server.connect(transport);
+try {
+  const transport = new StdioServerTransport();
+  await server.connect(transport);
+  process.stderr.write("prompt-coach: server started\n");
+} catch (err) {
+  process.stderr.write(`prompt-coach: failed to start — ${err}\n`);
+  process.exit(1);
+}

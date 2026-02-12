@@ -16,8 +16,32 @@ export function registerWhatChanged(server: McpServer): void {
       const log = run(`git log ${ref}..HEAD --oneline 2>/dev/null || git log -5 --oneline`);
       const branch = getBranch();
 
+      const fileList = diffFiles.split("\n").filter(Boolean);
+      const fileCount = fileList.length;
+      const commitCount = log.split("\n").filter(Boolean).length;
+
       return {
-        content: [{ type: "text" as const, text: `## What Changed (since ${ref})\nBranch: ${branch}\n\n### Commits\n\`\`\`\n${log}\n\`\`\`\n\n### Files Changed\n\`\`\`\n${diffFiles}\n\`\`\`\n\n### Stats\n\`\`\`\n${diffStat}\n\`\`\`` }],
+        content: [{
+          type: "text" as const,
+          text: `## What Changed (since ${ref})
+Branch: ${branch}
+**${commitCount} commits**, **${fileCount} files** changed
+
+### Commits
+\`\`\`
+${log || "no commits in range"}
+\`\`\`
+
+### Files Changed (${fileCount})
+\`\`\`
+${diffFiles || "none"}
+\`\`\`
+
+### Stats
+\`\`\`
+${diffStat || "no changes"}
+\`\`\``,
+        }],
       };
     }
   );

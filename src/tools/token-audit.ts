@@ -4,8 +4,26 @@ import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { run } from "../lib/git.js";
 import { readIfExists, findWorkspaceDocs, PROJECT_DIR } from "../lib/files.js";
 import { loadState, saveState, now, STATE_DIR } from "../lib/state.js";
-import { readFileSync, existsSync } from "fs";
+import { readFileSync, existsSync, statSync } from "fs";
 import { join } from "path";
+
+/** Shell-escape a filename for safe interpolation */
+function shellEscape(s: string): string {
+  return s.replace(/'/g, "'\\''");
+}
+
+/**
+ * Grade thresholds rationale:
+ * - A (0-10):  Minimal waste — small diffs, targeted reads, lean context
+ * - B (11-25): Minor waste — a few large files or slightly bloated docs
+ * - C (26-45): Moderate waste — repeated reads, large diffs, or context bloat
+ * - D (46-65): Significant waste — multiple anti-patterns compounding
+ * - F (66+):   Severe waste — session is burning tokens on avoidable overhead
+ *
+ * Each pattern contributes a weighted score reflecting its relative token cost.
+ */
+
+const MAX_TOOL_LOG_BYTES = 5 * 1024 * 1024; // 5MB limit for tool log parsing
 
 export function registerTokenAudit(server: McpServer): void {
   server.tool(
@@ -21,8 +39,8 @@ export function registerTokenAudit(server: McpServer): void {
       let wasteScore = 0;
 
       // 1. Git diff size & dirty file count
-      const diffStat = run("git diff --stat --no-color 2>/dev/null || echo ''");
-      const dirtyFiles = run("git diff --name-only 2>/dev/null || echo ''");
+      const diffStat = run("git diff --stat --no-color 2>/dev/null");
+      const dirtyFiles = run("git diff --name-only 2>/dev/null");
       const dirtyList = dirtyFiles.split("\n").filter(Boolean);
       const dirtyCount = dirtyList.length;
 
@@ -37,14 +55,15 @@ export function registerTokenAudit(server: McpServer): void {
         wasteScore += 15;
       }
 
-      // 2. Estimated context size from dirty files
+      // 2. Estimated context size from dirty files (safe line counting)
       const AVG_LINE_BYTES = 45;
       const AVG_TOKENS_PER_BYTE = 0.25;
       let estimatedContextTokens = 0;
       const largeFiles: string[] = [];
 
       for (const f of dirtyList.slice(0, 30)) {
-        const wc = run(`wc -l < "${f}" 2>/dev/null || echo 0`);
+        // Use shell-safe quoting instead of interpolation
+        const wc = run(`wc -l < '${shellEscape(f)}' 2>/dev/null`);
         const lines = parseInt(wc) || 0;
         estimatedContextTokens += lines * AVG_LINE_BYTES * AVG_TOKENS_PER_BYTE;
         if (lines > 500) {
@@ -61,7 +80,7 @@ export function registerTokenAudit(server: McpServer): void {
       // 3. CLAUDE.md bloat check
       const claudeMd = readIfExists("CLAUDE.md", 1);
       if (claudeMd !== null) {
-        const stat = run("wc -c < CLAUDE.md 2>/dev/null || echo 0");
+        const stat = run(`wc -c < '${shellEscape("CLAUDE.md")}' 2>/dev/null`);
         const bytes = parseInt(stat) || 0;
         if (bytes > 5120) {
           patterns.push(`CLAUDE.md is ${(bytes / 1024).toFixed(1)}KB — injected every session, burns tokens on paste`);
@@ -72,29 +91,38 @@ export function registerTokenAudit(server: McpServer): void {
 
       // 4. Workspace doc bloat
       const docs = findWorkspaceDocs();
-      const totalDocSize = Object.values(docs).reduce((sum, d) => sum + (d.size || 0), 0);
+      const docValues = Object.values(docs);
+      const totalDocSize = docValues.length > 0
+        ? docValues.reduce((sum, d) => sum + (d.size || 0), 0)
+        : 0;
       if (totalDocSize > 20000) {
         patterns.push(`Workspace context docs total ~${(totalDocSize / 1024).toFixed(1)}KB`);
         recommendations.push("Consolidate or slim workspace docs — every byte is injected each turn");
         wasteScore += 8;
       }
 
-      // 5. Sub-agent count from state
+      // 5. Sub-agent count — check multiple possible state locations
       let subAgentCount = 0;
-      const sessionState = readIfExists(".claude/state.json", 200);
-      if (sessionState) {
+      const stateLocations = [
+        join(STATE_DIR, "session.json"),
+        join(PROJECT_DIR, ".claude", "state.json"),
+      ];
+      for (const loc of stateLocations) {
+        if (!existsSync(loc)) continue;
         try {
-          const state = JSON.parse(sessionState);
+          const content = readFileSync(loc, "utf-8");
+          const state = JSON.parse(content);
           subAgentCount = state.subAgents?.length || state.sub_agents?.length || 0;
-          if (subAgentCount > 5) {
-            patterns.push(`${subAgentCount} sub-agents spawned this session`);
-            recommendations.push("Batch related work to reduce sub-agent overhead — each carries full context");
-            wasteScore += subAgentCount * 3;
-          }
-        } catch { /* ignore */ }
+          if (subAgentCount > 0) break;
+        } catch { /* ignore malformed state */ }
+      }
+      if (subAgentCount > 5) {
+        patterns.push(`${subAgentCount} sub-agents spawned this session`);
+        recommendations.push("Batch related work to reduce sub-agent overhead — each carries full context");
+        wasteScore += subAgentCount * 3;
       }
 
-      // 6. Deep mode: tool call pattern analysis
+      // 6. Deep mode: tool call pattern analysis (with size limit)
       let repeatedReads: Record<string, number> = {};
       let totalToolCalls = 0;
 
@@ -102,7 +130,18 @@ export function registerTokenAudit(server: McpServer): void {
         const toolLogPath = join(STATE_DIR, "tool-calls.jsonl");
         if (existsSync(toolLogPath)) {
           try {
-            const lines = readFileSync(toolLogPath, "utf-8").trim().split("\n").filter(Boolean);
+            const stat = statSync(toolLogPath);
+            if (stat.size > MAX_TOOL_LOG_BYTES) {
+              patterns.push(`Tool call log is ${(stat.size / 1024 / 1024).toFixed(1)}MB — too large for full analysis, sampling tail`);
+              wasteScore += 5;
+            }
+
+            // Read with size cap: take the tail if too large
+            const raw = stat.size <= MAX_TOOL_LOG_BYTES
+              ? readFileSync(toolLogPath, "utf-8")
+              : run(`tail -c ${MAX_TOOL_LOG_BYTES} '${shellEscape(toolLogPath)}'`);
+
+            const lines = raw.trim().split("\n").filter(Boolean);
             totalToolCalls = lines.length;
             const readCounts: Record<string, number> = {};
 
@@ -191,17 +230,26 @@ export function registerTokenAudit(server: McpServer): void {
         `**Score: ${grade}** (waste index: ${clampedWaste}/100)`,
         `**Estimated savings if addressed: ${savingsEstimate}**`,
         "",
-        `### Working Set`,
+        "### Grading Scale",
+        "| Grade | Waste | Meaning |",
+        "|-------|-------|---------|",
+        "| A | 0–10 | Minimal waste |",
+        "| B | 11–25 | Minor inefficiencies |",
+        "| C | 26–45 | Moderate — worth addressing |",
+        "| D | 46–65 | Significant token burn |",
+        "| F | 66+ | Severe — immediate action needed |",
+        "",
+        "### Working Set",
         `- Dirty files: ${dirtyCount}`,
         `- Uncommitted changes: ~${totalChanges} lines`,
         `- Est. context from dirty files: ~${Math.round(estimatedContextTokens).toLocaleString()} tokens`,
         `- Sub-agents spawned: ${subAgentCount}`,
         ...(check_mode === "deep" ? [`- Total tool calls analyzed: ${totalToolCalls}`, `- Files read 3+ times: ${Object.keys(repeatedReads).length}`] : []),
         "",
-        `### Waste Patterns`,
+        "### Waste Patterns",
         ...patterns.map((p) => `- ⚠️ ${p}`),
         "",
-        `### Recommendations`,
+        "### Recommendations",
         ...recommendations.map((r) => `- 💡 ${r}`),
       ].join("\n");
 
