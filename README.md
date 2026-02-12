@@ -69,6 +69,7 @@ cd prompt-discipline && npm install
     "prompt-coach": {
       "command": "npx",
       "args": ["tsx", "/path/to/prompt-discipline/src/index.ts"],
+      "cwd": "/path/to/prompt-discipline",
       "env": {
         "CLAUDE_PROJECT_DIR": "/path/to/your/project"
       }
