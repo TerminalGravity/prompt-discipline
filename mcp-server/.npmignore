@@ -1,0 +1,27 @@
+# Development files
+.claude/
+.claude-plugin/
+node_modules/
+*.log
+*.tmp
+
+# Test files and fixtures
+test/
+tests/
+__tests__/
+*.test.js
+*.test.ts
+*.spec.js
+*.spec.ts
+
+# Development artifacts
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# TypeScript source maps (optional - remove if you want to include them)
+*.js.map
+
+# Build artifacts not needed in distribution
+tsconfig.json

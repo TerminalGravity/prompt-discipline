@@ -1,19 +1,26 @@
 {
   "name": "prompt-discipline",
-  "version": "3.0.0",
+  "version": "3.1.0",
   "description": "18-tool MCP server for Claude Code: prevent vague prompts, search session history with vector search",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "prompt-discipline": "./src/cli/init.ts"
+    "prompt-discipline": "./bin/cli.js"
+  },
+  "engines": {
+    "node": ">=18"
   },
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js"
   },
   "keywords": [
-    "claude-code",
+    "claude",
     "mcp",
+    "prompt",
+    "ai", 
+    "claude-code",
+    "model-context-protocol",
     "mcp-server",
     "prompt-engineering",
     "developer-tools"
@@ -26,6 +33,8 @@
   "author": "Jack Felke",
   "files": [
     "src/",
+    "bin/",
+    "dist/",
     "README.md",
     "LICENSE"
   ],

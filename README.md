@@ -16,12 +16,13 @@ An 18-tool MCP server for Claude Code that catches ambiguous instructions before
 
 ## The Problem
 
-We analyzed 125 prompts across 9 real Claude Code sessions. The findings were brutal:
+We built this after analyzing **9 months of real Claude Code usage** — 512 sessions, 32,000+ events, 3,200+ prompts, 1,642 commits, and 258 sub-agent spawns across a production Next.js/Prisma/Supabase app. The findings were brutal:
 
 - **41% of prompts were under 50 characters** — things like `fix the tests`, `commit this`, `remove them`
 - Each vague prompt triggers a **wrong→fix cycle costing 2-3x tokens**
 - **~33K characters/day** duplicated from repeated context pastes
-- **6 context compactions** from unbounded session scope
+- **124 corrections logged** — places where Claude went the wrong direction and had to be steered back
+- **94 context compactions** from unbounded session scope blowing past the context window
 - Estimated **30-40% of tokens wasted** on avoidable back-and-forth
 
 The pattern is always the same: vague prompt → Claude guesses → wrong output → you correct → repeat. That's your money evaporating.
@@ -120,7 +121,7 @@ When you run `onboard_project`, the server scans your Claude Code session histor
 
 **What that gives you:**
 - 🔎 **Semantic search** — "How did I set up the auth middleware last month?" actually works
-- 📊 **32K+ events** indexed across 9 months of real sessions
+- 📊 **32K+ events** indexed across 9 months of real production sessions
 - 🧭 **Timeline view** — see what happened across sessions chronologically
 - 🔄 **Live scanning** — index new sessions as they happen
 
@@ -164,10 +165,6 @@ Claude Code ←→ MCP Protocol ←→ prompt-discipline server
 This project is young and there's plenty to do. Check the [issues](https://github.com/TerminalGravity/prompt-discipline/issues) — several are tagged `good first issue`.
 
 PRs welcome. No CLA, no bureaucracy. If it makes the tool better, it gets merged.
-
-## Full Plugin
-
-Want hooks, slash commands, and skills on top of the MCP server? See the full plugin at [alldigitalrewards/claude-plugins](https://github.com/alldigitalrewards/claude-plugins) → `plugins/prompt-discipline/`
 
 ## License
 
