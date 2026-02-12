@@ -1,0 +1,13 @@
+{
+  "name": "prompt-coach-mcp",
+  "version": "1.0.0",
+  "description": "MCP server that clarifies vague prompts by introspecting project state",
+  "type": "module",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1"
+  }
+}
