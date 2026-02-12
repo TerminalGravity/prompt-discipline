@@ -118,7 +118,7 @@ cd prompt-discipline && npm install
 
 This is the feature that makes prompt-discipline more than a linter.
 
-When you run `onboard_project`, the server scans your Claude Code session history (JSONL files in `~/.claude/projects/`) and indexes every event into a local [LanceDB](https://lancedb.github.io/lancedb/) database with vector embeddings.
+When you run `onboard_project` for a specific project, the server finds that project's session history (JSONL files in `~/.claude/projects/<encoded-path>/`) and indexes its events into a local [LanceDB](https://lancedb.github.io/lancedb/) database with vector embeddings. Run it once per project you want to search — each project's data stays tagged so you can query across them or filter to one.
 
 **What that gives you:**
 - 🔎 **Semantic search** — "How did I set up the auth middleware last month?" actually works
