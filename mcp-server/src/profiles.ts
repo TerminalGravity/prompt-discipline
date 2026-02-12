@@ -29,6 +29,7 @@ const STANDARD_TOOLS = new Set([
   // New lightweight tools
   "session_stats",
   "prompt_score",
+  "generate_scorecard",
 ]);
 
 const FULL_TOOLS = new Set([
@@ -38,6 +39,7 @@ const FULL_TOOLS = new Set([
   "search_history",
   "timeline_view",
   "scan_sessions",
+  "generate_scorecard",
 ]);
 
 export function getProfile(): Profile {

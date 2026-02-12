@@ -40,6 +40,7 @@ import { registerOnboardProject } from "./tools/onboard-project.js";
 import { registerSearchHistory } from "./tools/search-history.js";
 import { registerTimeline } from "./tools/timeline-view.js";
 import { registerScanSessions } from "./tools/scan-sessions.js";
+import { registerGenerateScorecard } from "./tools/generate-scorecard.js";
 
 const profile = getProfile();
 const server = new McpServer({
@@ -70,6 +71,7 @@ const toolRegistry: Array<[string, RegisterFn]> = [
   ["search_history", registerSearchHistory],
   ["timeline_view", registerTimeline],
   ["scan_sessions", registerScanSessions],
+  ["generate_scorecard", registerGenerateScorecard],
 ];
 
 let registered = 0;
