@@ -4,7 +4,7 @@
 
 **Preflight checks for your AI coding prompts.**
 
-An 18-tool MCP server for Claude Code that catches ambiguous instructions before they cost you 2-3x in wrong→fix cycles — plus semantic search across your entire session history.
+A 24-tool MCP server for Claude Code that catches ambiguous instructions before they cost you 2-3x in wrong→fix cycles — plus semantic search across your entire session history.
 
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.0+-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
 [![MCP](https://img.shields.io/badge/MCP-Compatible-blueviolet)](https://modelcontextprotocol.io/)
@@ -29,13 +29,15 @@ The pattern is always the same: vague prompt → Claude guesses → wrong output
 
 ## The Solution
 
-18 tools in 3 categories that run as an MCP server inside Claude Code:
+24 tools in 4 categories that run as an MCP server inside Claude Code:
 
 | Category | What it does |
 |----------|-------------|
+| ✈️ **Preflight Core** (1 tool) | Unified entry point — triages every prompt, chains the right checks automatically |
 | 🎯 **Prompt Discipline** (12 tools) | Catches vague prompts, enforces structure, prevents waste |
 | 🔍 **Timeline Intelligence** (4 tools) | LanceDB vector search across months of session history |
-| ✅ **Verification & Hygiene** (2 tools) | Type-check, test, and audit before declaring done |
+| 📊 **Analysis & Reporting** (4 tools) | Scorecards, cost estimation, session stats, pattern detection |
+| ✅ **Verification & Hygiene** (3 tools) | Type-check, test, audit, and contract search |
 
 ## Before / After
 
@@ -95,19 +97,26 @@ cd preflight && npm install
 
 ## Tool Reference
 
+### ✈️ Preflight Core
+
+| Tool | What it does |
+|------|-------------|
+| `preflight_check` | **The main entry point.** Triages your prompt (trivial → multi-step), then chains the right checks automatically. One tool to rule them all. |
+
 ### 🎯 Prompt Discipline
 
 | Tool | What it does |
 |------|-------------|
 | `scope_work` | Creates structured execution plans before coding starts |
 | `clarify_intent` | Gathers project context to disambiguate vague prompts |
-| `enrich_agent_task` | Enriches sub-agent tasks with file paths and patterns |
+| `enrich_agent_task` | Enriches sub-agent tasks with file paths, patterns, and cross-service context |
 | `sharpen_followup` | Resolves "fix it" / "do the others" to actual file targets |
 | `token_audit` | Detects waste patterns, grades your session A–F |
 | `sequence_tasks` | Orders tasks by dependency, locality, and risk |
 | `checkpoint` | Save game before compaction — commits + resumption notes |
 | `check_session_health` | Monitors uncommitted files, time since commit, turn count |
 | `log_correction` | Tracks corrections and identifies recurring error patterns |
+| `check_patterns` | Checks prompts against learned correction patterns — warns about known pitfalls |
 | `session_handoff` | Generates handoff briefs for new sessions |
 | `what_changed` | Summarizes diffs since last checkpoint |
 
@@ -115,10 +124,19 @@ cd preflight && npm install
 
 | Tool | What it does |
 |------|-------------|
-| `onboard_project` | Indexes a project's session history into LanceDB vectors |
-| `search_history` | Semantic search across all indexed sessions |
+| `onboard_project` | Indexes a project's session history + contracts into per-project LanceDB |
+| `search_history` | Semantic search with scope: current project, related, or all |
 | `timeline` | Chronological view of events across sessions |
 | `scan_sessions` | Live scanning of active session data |
+
+### 📊 Analysis & Reporting
+
+| Tool | What it does |
+|------|-------------|
+| `generate_scorecard` | 12-category report card — session, trend (week/month), or cross-project comparative. PDF or markdown. |
+| `estimate_cost` | Token usage, dollar cost, waste from corrections, preflight savings |
+| `session_stats` | Lightweight session analysis — no embeddings needed |
+| `prompt_score` | Gamified A–F grading on specificity, scope, actionability, done-condition |
 
 ### ✅ Verification & Hygiene
 
@@ -126,6 +144,7 @@ cd preflight && npm install
 |------|-------------|
 | `verify_completion` | Runs type check + tests + build before declaring done |
 | `audit_workspace` | Finds stale/missing workspace docs vs git activity |
+| `search_contracts` | Search API contracts, types, and schemas across current and related projects |
 
 ## Timeline Intelligence
 
@@ -146,19 +165,47 @@ No data leaves your machine. Embeddings run locally by default (Xenova/transform
 ```
 Claude Code ←→ MCP Protocol ←→ preflight server
                                       │
-                    ┌─────────────────┼─────────────────┐
-                    │                 │                  │
-              Discipline Tools   Timeline Tools    Verification
-              (12 tools)         (4 tools)         (2 tools)
-                                      │
-                                  LanceDB
-                                (local vectors)
+              ┌───────────┬───────────┼───────────┬──────────┐
+              │           │           │           │          │
+         Preflight    Discipline   Timeline   Analysis   Verify
+         Core (1)    Tools (12)   Tools (4)   Tools (4)  (3)
+              │           │           │
+         Smart Triage  Patterns    LanceDB        .preflight/
+         Classification Learning   (per-project)  (project config)
                                       │
                               ~/.claude/projects/
                             (session JSONL files)
 ```
 
 ## Configuration
+
+### Project Config (`.preflight/`)
+
+Drop a `.preflight/` directory in your project root for team-shared config:
+
+```yaml
+# .preflight/config.yml
+profile: standard
+related_projects:
+  - path: /path/to/auth-service
+    alias: auth-service
+  - path: /path/to/notifications
+    alias: notifications
+thresholds:
+  session_stale_minutes: 30
+  max_tool_calls_before_checkpoint: 100
+```
+
+```yaml
+# .preflight/triage.yml
+rules:
+  always_check: [rewards, permissions, migration]
+  skip: [commit, format, lint]
+  cross_service_keywords: [auth, notification, event]
+strictness: standard
+```
+
+No config? No problem — everything works with zero configuration. Config just lets teams customize.
 
 ### Embedding Providers
 
@@ -173,6 +220,7 @@ Claude Code ←→ MCP Protocol ←→ preflight server
 |----------|-------------|---------|
 | `CLAUDE_PROJECT_DIR` | Project root to monitor | Required |
 | `OPENAI_API_KEY` | OpenAI key for embeddings | (uses local Xenova) |
+| `PREFLIGHT_RELATED` | Comma-separated related project paths | (none) |
 
 ## Contributing
 

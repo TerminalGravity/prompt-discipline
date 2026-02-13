@@ -1,6 +1,6 @@
 {
   "name": "preflight-dev",
-  "version": "3.1.0",
+  "version": "3.2.0",
   "description": "Preflight checks for AI coding agents — catch vague prompts, surface missing context, search session history",
   "type": "module",
   "main": "dist/index.js",
