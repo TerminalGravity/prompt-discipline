@@ -216,13 +216,17 @@ export function triagePrompt(
 
   // 6. Ambiguous signals
   const ambiguousReasons: string[] = [];
-  if (len < 50 && !hasFileRefs(prompt)) {
+  const promptHasFileRefs = hasFileRefs(prompt);
+  const promptHasLineNumbers = hasLineNumbers(prompt);
+
+  if (len < 50 && !promptHasFileRefs) {
     ambiguousReasons.push('short prompt without file references');
   }
-  if (hasVaguePronouns(prompt)) {
+  if (hasVaguePronouns(prompt) && !promptHasFileRefs) {
     ambiguousReasons.push('contains vague pronouns');
   }
-  if (hasVagueVerbs(prompt)) {
+  // Only flag vague verbs if there are no concrete file/line references
+  if (hasVagueVerbs(prompt) && !promptHasFileRefs && !promptHasLineNumbers) {
     ambiguousReasons.push('contains vague verbs without specific targets');
   }
 
