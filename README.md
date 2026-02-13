@@ -130,31 +130,32 @@ claude mcp add preflight -- preflight-dev
 
 Every prompt flows through a classification engine before any work begins. This is the actual decision tree from [`src/lib/triage.ts`](src/lib/triage.ts):
 
-```
-Prompt arrives
-  │
-  ├─ matches skip keyword? ──────────────────────── → TRIVIAL (pass through)
-  │   (commit, format, lint — configurable)
-  │
-  ├─ multi-step indicators? ─────────────────────── → MULTI-STEP
-  │   ("and" joining clauses, "then/after that",
-  │    numbered lists, files in multiple dirs)
-  │
-  ├─ cross-service keywords or aliases? ─────────── → CROSS-SERVICE
-  │   (auth, notification, event, webhook,
-  │    plus your .preflight/config.yml aliases)
-  │
-  ├─ matches always_check keyword? ──────────────── → AMBIGUOUS
-  │   (rewards, permissions, migration, schema)
-  │
-  ├─ < 20 chars + trivial command? ──────────────── → TRIVIAL
-  │   (commit, test, build, push, etc.)
-  │
-  ├─ < 50 chars + no file refs? ─────────────────── → AMBIGUOUS
-  ├─ vague pronouns (it/them/those)? ────────────── → AMBIGUOUS
-  ├─ vague verbs (fix/update) without file refs? ── → AMBIGUOUS
-  │
-  └─ has file refs + line numbers + detail? ─────── → CLEAR ✓
+```mermaid
+flowchart TD
+    A[Prompt Arrives] --> B{Skip keyword?}
+    B -->|Yes| T1[✅ TRIVIAL]
+    B -->|No| C{Multi-step indicators?}
+    C -->|Yes| MS[🔶 MULTI-STEP]
+    C -->|No| D{Cross-service keywords?}
+    D -->|Yes| CS[🔗 CROSS-SERVICE]
+    D -->|No| E{always_check keyword?}
+    E -->|Yes| AM1[⚠️ AMBIGUOUS]
+    E -->|No| F{"< 20 chars + common cmd?"}
+    F -->|Yes| T2[✅ TRIVIAL]
+    F -->|No| G{"< 50 chars, no file refs?"}
+    G -->|Yes| AM2[⚠️ AMBIGUOUS]
+    G -->|No| H{Vague pronouns or verbs?}
+    H -->|Yes| AM3[⚠️ AMBIGUOUS]
+    H -->|No| CL[✅ CLEAR]
+
+    style T1 fill:#2d6a4f,color:#fff
+    style T2 fill:#2d6a4f,color:#fff
+    style CL fill:#2d6a4f,color:#fff
+    style AM1 fill:#e9c46a,color:#000
+    style AM2 fill:#e9c46a,color:#000
+    style AM3 fill:#e9c46a,color:#000
+    style CS fill:#457b9d,color:#fff
+    style MS fill:#e76f51,color:#fff
 ```
 
 Each level triggers different tool chains:
@@ -171,19 +172,22 @@ Additionally, **correction pattern matching** can boost any triage level. If you
 
 ### Data Flow
 
-```
-┌─────────────┐    ┌──────────────┐    ┌──────────────┐    ┌──────────┐
-│ User Prompt │───▶│   Triage     │───▶│  Tool Chain  │───▶│ Response │
-└─────────────┘    └──────────────┘    └──────────────┘    └──────────┘
-                     │          │         │          │
-                ┌────┴───┐ ┌───┴────┐  ┌─┴────┐ ┌───┴──────┐
-                │.preflight│ │Patterns│  │LanceDB│ │Contracts │
-                │config.yml│ │  Log   │  │  (per │ │  (per    │
-                │triage.yml│ │        │  │project)│ │ project) │
-                └─────────┘ └────────┘  └───────┘ └──────────┘
-                                             │
-                                    ~/.claude/projects/
-                                   (session JSONL files)
+```mermaid
+flowchart LR
+    A[User Prompt] --> B[Triage Engine]
+    B --> C[Tool Chain]
+    C --> D[Response]
+
+    B -.-> E[".preflight/\nconfig.yml\ntriage.yml"]
+    B -.-> F["Patterns\nLog"]
+    C -.-> G["LanceDB\n(per-project)"]
+    C -.-> H["Contracts\n(per-project)"]
+    G -.-> I["~/.claude/projects/\n(session JSONL)"]
+
+    style A fill:#264653,color:#fff
+    style B fill:#2a9d8f,color:#fff
+    style C fill:#e9c46a,color:#000
+    style D fill:#e76f51,color:#fff
 ```
 
 ### Session Data Structure
@@ -511,28 +515,33 @@ First run with local embeddings downloads the [Xenova/all-MiniLM-L6-v2](https://
 
 ## Architecture
 
-```
-Claude Code ←──── MCP Protocol ────→ preflight server
-                                           │
-                 ┌─────────┬───────────────┼──────────────┬──────────┐
-                 │         │               │              │          │
-            Preflight   Discipline    Timeline       Analysis    Verify
-            Core (1)   Tools (12)    Tools (4)      Tools (4)    (3)
-                 │         │               │              │
-            ┌────┘    ┌────┘          ┌────┘         ┌────┘
-            ▼         ▼               ▼              ▼
-       ┌─────────┐ ┌────────┐  ┌──────────┐  ┌───────────┐
-       │ Triage  │ │Patterns│  │  LanceDB │  │ Scorecard │
-       │ Engine  │ │Learning│  │(per-proj)│  │  Engine   │
-       └────┬────┘ └────────┘  └────┬─────┘  └───────────┘
-            │                       │
-       ┌────┴────┐            ┌─────┴──────┐
-       │.preflight│            │  Session   │
-       │config.yml│            │  Parser    │
-       │triage.yml│            └─────┬──────┘
-       │contracts/│                  │
-       └─────────┘           ~/.claude/projects/
-                            (session JSONL files)
+```mermaid
+flowchart TB
+    CC[Claude Code] <-->|MCP Protocol| PS[preflight server]
+    
+    PS --> PC[✈️ Preflight Core]
+    PS --> DT[🎯 Discipline Tools]
+    PS --> TL[🔍 Timeline Tools]
+    PS --> AN[📊 Analysis Tools]
+    PS --> VR[✅ Verify Tools]
+
+    PC --> TE[Triage Engine]
+    DT --> PL[Pattern Learning]
+    TL --> LDB[(LanceDB\nper-project)]
+    AN --> SCE[Scorecard Engine]
+
+    TE -.-> CFG[".preflight/\nconfig.yml\ntriage.yml\ncontracts/"]
+    LDB --> SP[Session Parser]
+    SP --> JSONL["~/.claude/projects/\n(session JSONL files)"]
+
+    style CC fill:#264653,color:#fff
+    style PS fill:#2a9d8f,color:#fff
+    style PC fill:#e76f51,color:#fff
+    style DT fill:#e9c46a,color:#000
+    style TL fill:#457b9d,color:#fff
+    style AN fill:#6a4c93,color:#fff
+    style VR fill:#2d6a4f,color:#fff
+    style LDB fill:#1d3557,color:#fff
 ```
 
 ### Per-Project Data Layout
